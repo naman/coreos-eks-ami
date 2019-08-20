@@ -1,9 +1,9 @@
-# Amazon EKS AMI Build Specification
+# Amazon EKS AMI Build Specification for CoreOS
 
 This repository contains resources and configuration scripts for building a
 custom Amazon EKS AMI with [HashiCorp Packer](https://www.packer.io/). This is
 the same configuration that Amazon EKS uses to create the official Amazon
-EKS-optimized AMI.
+EKS-optimized AMI with minor changes to accomodate to CoreOS.
 
 ## Setup
 
@@ -15,7 +15,7 @@ For more information, see [Authentication](https://www.packer.io/docs/builders/a
 in the Packer documentation.
 
 **Note**
-The default instance type to build this AMI is an `m4.large` and does not
+The default instance type to build this AMI is an `m5.large` and does not
 qualify for the AWS free tier. You are charged for any instances created
 when building this AMI.
 

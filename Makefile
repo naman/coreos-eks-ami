@@ -1,11 +1,12 @@
 PACKER_BINARY ?= packer
 PACKER_VARIABLES := ami_name binary_bucket_name kubernetes_version kubernetes_build_date docker_version cni_version cni_plugin_version source_ami_id arch instance_type
-AWS_DEFAULT_REGION ?= us-west-2
+AWS_DEFAULT_REGION ?= us-east-2
 
 K8S_VERSION_PARTS := $(subst ., ,$(kubernetes_version))
 K8S_VERSION_MINOR := $(word 1,${K8S_VERSION_PARTS}).$(word 2,${K8S_VERSION_PARTS})
 
 ami_name ?= amazon-eks-node-$(K8S_VERSION_MINOR)-v$(shell date +'%Y%m%d')
+subnet_id ?= subnet-0497f9bf57c71ec69
 arch ?= x86_64
 ifeq ($(arch), arm64)
 instance_type ?= a1.large
@@ -23,12 +24,12 @@ all: 1.10 1.11 1.12 1.13
 
 .PHONY: validate
 validate:
-	$(PACKER_BINARY) validate $(foreach packerVar,$(PACKER_VARIABLES), $(if $($(packerVar)),--var $(packerVar)=$($(packerVar)),)) eks-worker-al2.json
+	$(PACKER_BINARY) validate $(foreach packerVar,$(PACKER_VARIABLES), $(if $($(packerVar)),--var $(packerVar)=$($(packerVar)),)) eks-worker-coreos.json
 
 .PHONY: k8s
 k8s: validate
 	@echo "$(T_GREEN)Building AMI for version $(T_YELLOW)$(kubernetes_version)$(T_GREEN) on $(T_YELLOW)$(arch)$(T_RESET)"
-	$(PACKER_BINARY) build $(foreach packerVar,$(PACKER_VARIABLES), $(if $($(packerVar)),--var $(packerVar)=$($(packerVar)),)) eks-worker-al2.json
+	$(PACKER_BINARY) build $(foreach packerVar,$(PACKER_VARIABLES), $(if $($(packerVar)),--var $(packerVar)=$($(packerVar)),)) eks-worker-coreos.json
 
 .PHONY: 1.10
 1.10:

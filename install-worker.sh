@@ -47,36 +47,15 @@ fi
 ### Packages ###################################################################
 ################################################################################
 
-# Update the OS to begin with to catch up to the latest packages.
-sudo yum update -y
+# Setup a docker image for AWS CLI and CloudFormation  scripts
 
-# Install necessary packages
-sudo yum install -y \
-    aws-cfn-bootstrap \
-    awscli \
-    chrony \
-    conntrack \
-    curl \
-    jq \
-    ec2-instance-connect \
-    nfs-utils \
-    socat \
-    unzip \
-    wget
+docker build -t cfn-helper $TEMPLATE_DIR
+
+sudo systemctl enable ntpd
 
 ################################################################################
 ### Time #######################################################################
 ################################################################################
-
-# Make sure Amazon Time Sync Service starts on boot.
-sudo chkconfig chronyd on
-
-# Make sure that chronyd syncs RTC clock to the kernel.
-cat <<EOF | sudo tee -a /etc/chrony.conf
-# This directive enables kernel synchronisation (every 11 minutes) of the
-# real-time clock. Note that it can’t be used along with the 'rtcfile' directive.
-rtcsync
-EOF
 
 # If current clocksource is xen, switch to tsc
 if grep --quiet xen /sys/devices/system/clocksource/clocksource0/current_clocksource &&
@@ -87,40 +66,12 @@ else
 fi
 
 ################################################################################
-### iptables ###################################################################
-################################################################################
-
-# Enable forwarding via iptables
-sudo bash -c "/sbin/iptables-save > /etc/sysconfig/iptables"
-
-sudo mv $TEMPLATE_DIR/iptables-restore.service /etc/systemd/system/iptables-restore.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable iptables-restore
-
-################################################################################
 ### Docker #####################################################################
 ################################################################################
 
-sudo yum install -y yum-utils device-mapper-persistent-data lvm2
-
-INSTALL_DOCKER="${INSTALL_DOCKER:-true}"
-if [[ "$INSTALL_DOCKER" == "true" ]]; then
-    sudo amazon-linux-extras enable docker
-    sudo yum install -y docker-${DOCKER_VERSION}*
-    sudo usermod -aG docker $USER
-
-    # Remove all options from sysconfig docker.
-    sudo sed -i '/OPTIONS/d' /etc/sysconfig/docker
-
-    sudo mkdir -p /etc/docker
-    sudo mv $TEMPLATE_DIR/docker-daemon.json /etc/docker/daemon.json
-    sudo chown root:root /etc/docker/daemon.json
-
-    # Enable docker daemon to start on boot.
-    sudo systemctl daemon-reload
-    sudo systemctl enable docker
-fi
+# Enable docker daemon to start on boot.
+sudo systemctl daemon-reload
+sudo systemctl enable docker
 
 ################################################################################
 ### Logrotate ##################################################################
@@ -141,17 +92,25 @@ sudo mkdir -p /var/lib/kubernetes
 sudo mkdir -p /var/lib/kubelet
 sudo mkdir -p /opt/cni/bin
 
+CNI_VERSION=${CNI_VERSION:-"v0.6.0"}
 wget https://github.com/containernetworking/cni/releases/download/${CNI_VERSION}/cni-${ARCH}-${CNI_VERSION}.tgz
 wget https://github.com/containernetworking/cni/releases/download/${CNI_VERSION}/cni-${ARCH}-${CNI_VERSION}.tgz.sha512
 sudo sha512sum -c cni-${ARCH}-${CNI_VERSION}.tgz.sha512
 sudo tar -xvf cni-${ARCH}-${CNI_VERSION}.tgz -C /opt/cni/bin
 rm cni-${ARCH}-${CNI_VERSION}.tgz cni-${ARCH}-${CNI_VERSION}.tgz.sha512
 
-wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz
-wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz.sha512
-sudo sha512sum -c cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz.sha512
-sudo tar -xvf cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz -C /opt/cni/bin
-rm cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz.sha512
+CNI_PLUGIN_VERSION=${CNI_PLUGIN_VERSION:-"v0.8.2"}
+if [ "$CNI_PLUGIN_VERSION" = "v0.8.2" ]; then
+  wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-linux-${ARCH}-${CNI_PLUGIN_VERSION}.tgz
+  wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-linux-${ARCH}-${CNI_PLUGIN_VERSION}.tgz.sha512
+else
+  wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz
+  wget https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGIN_VERSION}/cni-plugins-${ARCH}-${CNI_PLUGIN_VERSION}.tgz.sha512
+fi
+FILENAME="$( basename "$(find "$(pwd)" -type f -name "cni-plugins-*-${CNI_PLUGIN_VERSION}.tgz")" )"
+sudo sha512sum -c "${FILENAME}.sha512"
+sudo tar -xvf "${FILENAME}" -C /opt/cni/bin
+rm "${FILENAME}" "${FILENAME}.sha512"
 
 echo "Downloading binaries from: s3://$BINARY_BUCKET_NAME"
 S3_DOMAIN="s3-$BINARY_BUCKET_REGION"
@@ -161,10 +120,14 @@ fi
 S3_URL_BASE="https://$BINARY_BUCKET_NAME.$S3_DOMAIN.amazonaws.com/$KUBERNETES_VERSION/$KUBERNETES_BUILD_DATE/bin/linux/$ARCH"
 S3_PATH="s3://$BINARY_BUCKET_NAME/$KUBERNETES_VERSION/$KUBERNETES_BUILD_DATE/bin/linux/$ARCH"
 
+sudo mkdir -p /opt/bin
+
 BINARIES=(
     kubelet
+    kubectl
     aws-iam-authenticator
 )
+
 for binary in ${BINARIES[*]} ; do
     if [[ ! -z "$AWS_ACCESS_KEY_ID" ]]; then
         echo "AWS cli present - using it to copy binaries from s3."
@@ -177,7 +140,7 @@ for binary in ${BINARIES[*]} ; do
     fi
     sudo sha256sum -c $binary.sha256
     sudo chmod +x $binary
-    sudo mv $binary /usr/bin/
+    sudo mv $binary /opt/bin/
 done
 sudo rm *.sha256
 
@@ -199,7 +162,6 @@ sudo chown root:root /etc/systemd/system/kubelet.service
 sudo mv $TEMPLATE_DIR/$KUBELET_CONFIG /etc/kubernetes/kubelet/kubelet-config.json
 sudo chown root:root /etc/kubernetes/kubelet/kubelet-config.json
 
-
 sudo systemctl daemon-reload
 # Disable the kubelet until the proper dropins have been configured
 sudo systemctl disable kubelet
@@ -217,11 +179,12 @@ sudo chmod +x /etc/eks/bootstrap.sh
 ### AMI Metadata ###############################################################
 ################################################################################
 
-BASE_AMI_ID=$(curl -s  http://169.254.169.254/latest/meta-data/ami-id)
+BASE_AMI_ID="$(curl -s 'http://169.254.169.254/latest/meta-data/ami-id')" ;
 cat <<EOF > /tmp/release
 BASE_AMI_ID="$BASE_AMI_ID"
 BUILD_TIME="$(date)"
 BUILD_KERNEL="$(uname -r)"
+AMI_NAME="$AMI_NAME"
 ARCH="$(uname -m)"
 EOF
 sudo mv /tmp/release /etc/eks/release
@@ -231,11 +194,8 @@ sudo chown root:root /etc/eks/*
 ### Cleanup ####################################################################
 ################################################################################
 
-# Clean up yum caches to reduce the image size
-sudo yum clean all
-sudo rm -rf \
-    $TEMPLATE_DIR  \
-    /var/cache/yum
+# Clean up caches to reduce the image size
+sudo rm -rf "${TEMPLATE_DIR}" ;
 
 # Clean up files to reduce confusion during debug
 sudo rm -rf \
@@ -243,18 +203,17 @@ sudo rm -rf \
     /etc/machine-id \
     /etc/resolv.conf \
     /etc/ssh/ssh_host* \
-    /home/ec2-user/.ssh/authorized_keys \
     /root/.ssh/authorized_keys \
+    /home/core/.ssh/authorized_keys \
     /var/lib/cloud/data \
     /var/lib/cloud/instance \
     /var/lib/cloud/instances \
     /var/lib/cloud/sem \
     /var/lib/dhclient/* \
     /var/lib/dhcp/dhclient.* \
-    /var/lib/yum/history \
     /var/log/cloud-init-output.log \
     /var/log/cloud-init.log \
     /var/log/secure \
-    /var/log/wtmp
+    /var/log/wtmp ;
 
 sudo touch /etc/machine-id
