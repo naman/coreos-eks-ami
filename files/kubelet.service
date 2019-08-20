@@ -6,7 +6,7 @@ Requires=docker.service
 
 [Service]
 ExecStartPre=/sbin/iptables -P FORWARD ACCEPT
-ExecStart=/usr/bin/kubelet --cloud-provider aws \
+ExecStart=/opt/bin/kubelet --cloud-provider aws \
     --config /etc/kubernetes/kubelet/kubelet-config.json \
     --allow-privileged=true \
     --kubeconfig /var/lib/kubelet/kubeconfig \

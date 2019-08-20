@@ -134,41 +134,26 @@ CA_CERTIFICATE_DIRECTORY=/etc/kubernetes/pki
 CA_CERTIFICATE_FILE_PATH=$CA_CERTIFICATE_DIRECTORY/ca.crt
 mkdir -p $CA_CERTIFICATE_DIRECTORY
 if [[ -z "${B64_CLUSTER_CA}" ]] && [[ -z "${APISERVER_ENDPOINT}" ]]; then
-    DESCRIBE_CLUSTER_RESULT="/tmp/describe_cluster_result.txt"
-    rc=0
-    # Retry the DescribleCluster API for API_RETRY_ATTEMPTS
-    for attempt in `seq 0 $API_RETRY_ATTEMPTS`; do
-        if [[ $attempt -gt 0 ]]; then
-            echo "Attempt $attempt of $API_RETRY_ATTEMPTS"
-        fi
-
-        aws eks wait cluster-active \
-            --region=${AWS_DEFAULT_REGION} \
-            --name=${CLUSTER_NAME}
-
-        aws eks describe-cluster \
-            --region=${AWS_DEFAULT_REGION} \
-            --name=${CLUSTER_NAME} \
-            --output=text \
-            --query 'cluster.{certificateAuthorityData: certificateAuthority.data, endpoint: endpoint}' > $DESCRIBE_CLUSTER_RESULT || rc=$?
-        if [[ $rc -eq 0 ]]; then
-            break
-        fi
-        if [[ $attempt -eq $API_RETRY_ATTEMPTS ]]; then
-            exit $rc
-        fi
-        jitter=$((1 + RANDOM % 10))
-        sleep_sec="$(( $(( 5 << $((1+$attempt)) )) + $jitter))"
-        sleep $sleep_sec
-    done
-    B64_CLUSTER_CA=$(cat $DESCRIBE_CLUSTER_RESULT | awk '{print $1}')
-    APISERVER_ENDPOINT=$(cat $DESCRIBE_CLUSTER_RESULT | awk '{print $2}')
+    DESCRIBE_CLUSTER_RESULT=$(docker run --rm cfn-helper aws eks describe-cluster \
+        --region=${AWS_DEFAULT_REGION} \
+        --name=${CLUSTER_NAME} \
+        --output=text \
+        --query 'cluster.{certificateAuthorityData: certificateAuthority.data, endpoint: endpoint}') ## > $DESCRIBE_CLUSTER_RESULT
+    B64_CLUSTER_CA=$(echo $DESCRIBE_CLUSTER_RESULT | awk '{print $1}')
+    APISERVER_ENDPOINT=$(echo $DESCRIBE_CLUSTER_RESULT | awk '{print $2}')
 fi
 
 echo $B64_CLUSTER_CA | base64 -d > $CA_CERTIFICATE_FILE_PATH
 
 sed -i s,CLUSTER_NAME,$CLUSTER_NAME,g /var/lib/kubelet/kubeconfig
 sed -i s,MASTER_ENDPOINT,$APISERVER_ENDPOINT,g /var/lib/kubelet/kubeconfig
+/opt/bin/kubectl config \
+    --kubeconfig /var/lib/kubelet/kubeconfig \
+    set-cluster \
+    kubernetes \
+    --certificate-authority=/etc/kubernetes/pki/ca.crt \
+    --server=$APISERVER_ENDPOINT
+
 ### kubelet.service configuration
 
 MAC=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/ -s | head -n 1 | sed 's/\/$//')
@@ -220,6 +205,7 @@ if [[ "$ENABLE_DOCKER_BRIDGE" = "true" ]]; then
     echo "$(jq '.bridge="docker0" | ."live-restore"=false' /etc/docker/daemon.json)" > /etc/docker/daemon.json
     systemctl restart docker
 fi
+mkdir -p /var/lib/kubelet/device-plugins
 
 systemctl daemon-reload
 systemctl enable kubelet
