@@ -129,15 +129,9 @@ BINARIES=(
 )
 
 for binary in ${BINARIES[*]} ; do
-    if [[ ! -z "$AWS_ACCESS_KEY_ID" ]]; then
-        echo "AWS cli present - using it to copy binaries from s3."
-        aws s3 cp --region $BINARY_BUCKET_REGION $S3_PATH/$binary .
-        aws s3 cp --region $BINARY_BUCKET_REGION $S3_PATH/$binary.sha256 .
-    else
-        echo "AWS cli missing - using wget to fetch binaries from s3. Note: This won't work for private bucket."
-        sudo wget $S3_URL_BASE/$binary
-        sudo wget $S3_URL_BASE/$binary.sha256
-    fi
+    echo "Avoid using AWS cli for CoreOS. AWS cli missing - using wget to fetch binaries from s3. Note: This won't work for private bucket."
+    sudo wget $S3_URL_BASE/$binary
+    sudo wget $S3_URL_BASE/$binary.sha256
     sudo sha256sum -c $binary.sha256
     sudo chmod +x $binary
     sudo mv $binary /opt/bin/

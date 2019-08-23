@@ -1,17 +1,20 @@
 PACKER_BINARY ?= packer
-PACKER_VARIABLES := ami_name binary_bucket_name kubernetes_version kubernetes_build_date docker_version cni_version cni_plugin_version source_ami_id arch instance_type
-AWS_DEFAULT_REGION ?= us-east-2
+PACKER_VARIABLES := aws_region ami_name binary_bucket_name kubernetes_version kubernetes_build_date docker_version cni_version cni_plugin_version arch instance_type subnet_id vpc
+
+aws_region ?= us-east-2
 
 K8S_VERSION_PARTS := $(subst ., ,$(kubernetes_version))
 K8S_VERSION_MINOR := $(word 1,${K8S_VERSION_PARTS}).$(word 2,${K8S_VERSION_PARTS})
 
 ami_name ?= amazon-eks-node-$(K8S_VERSION_MINOR)-v$(shell date +'%Y%m%d')
 subnet_id ?= subnet-0497f9bf57c71ec69
+vpc = vpc-xxx
+
 arch ?= x86_64
 ifeq ($(arch), arm64)
 instance_type ?= a1.large
 else
-instance_type ?= m4.large
+instance_type ?= m5.large
 endif
 
 T_RED := \e[0;31m

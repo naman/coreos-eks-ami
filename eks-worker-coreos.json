@@ -1,6 +1,6 @@
 {
   "variables": {
-    "aws_region": "us-east-2",
+    "aws_region": "",
     "ami_name": null,
     "creator": "{{env `USER`}}",
     "encrypted": "false",
@@ -24,8 +24,8 @@
     "ssh_interface": "",
     "ssh_username": "core",
     "associate_public_ip_address": "true",
-    "subnet_id": ""
-
+    "subnet_id": "",
+    "vpc": ""
   },
 
   "builders": [
@@ -107,10 +107,7 @@
         "BINARY_BUCKET_REGION={{user `binary_bucket_region`}}",
         "DOCKER_VERSION={{user `docker_version`}}",
         "CNI_VERSION={{user `cni_version`}}",
-        "CNI_PLUGIN_VERSION={{user `cni_plugin_version`}}",
-        "AWS_ACCESS_KEY_ID={{user `aws_access_key_id`}}",
-        "AWS_SECRET_ACCESS_KEY={{user `aws_secret_access_key`}}",
-        "AWS_SESSION_TOKEN={{user `aws_session_token`}}"
+        "CNI_PLUGIN_VERSION={{user `cni_plugin_version`}}"
       ]
     }
   ],
